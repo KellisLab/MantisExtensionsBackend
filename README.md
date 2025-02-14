@@ -25,6 +25,20 @@ This service provides an API endpoint for creating Mantis spaces from uploaded d
     pip install -r src/requirements.txt
     ```
 
+4. **Install Playwright**
+
+    ```bash
+    python -m playwright install
+    ```
+
+    **Note:** If the Playwright installation fails, try running:
+
+    ```bash
+    python -m playwright install-deps
+    ```
+
+    before proceeding.
+
 ## Getting Started
 
 1.  **Set environment variables:**
