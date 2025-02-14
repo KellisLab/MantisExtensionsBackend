@@ -45,9 +45,6 @@ def create_space():
     except Exception as e:
         tb = traceback.format_exc()
         
-        print (e)
-        print (tb)
-        
         return jsonify({"error": str(e), "stacktrace": tb}), 400
     
 if __name__ == '__main__':
