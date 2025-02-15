@@ -27,7 +27,7 @@ Jinja2==3.1.5
 jupyter_client==8.6.3
 jupyter_core==5.7.2
 kiwisolver==1.4.8
-mantis_sdk @ git+https://github.com/KellisLab/Mantis_SDK.git@98b4f7ad8fa93427134fd9e203f5e3ce03e2bb22
+mantis_sdk @ git+https://github.com/KellisLab/Mantis_SDK.git@c9ecf60723a1f3ea291041aa3f8166f150d94e1a
 MarkupSafe==3.0.2
 matplotlib==3.10.0
 matplotlib-inline==0.1.7
@@ -52,6 +52,7 @@ Pygments==2.19.1
 pyparsing==3.2.1
 pyppeteer==0.0.25
 python-dateutil==2.9.0.post0
+python-dotenv==1.0.1
 pytz==2025.1
 pyzmq==26.2.1
 requests==2.32.3

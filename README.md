@@ -43,7 +43,8 @@ This service provides an API endpoint for creating Mantis spaces from uploaded d
 
 1.  **Set environment variables:**
 
-    *   You may need to set environment variables for Mantis SDK configuration, depending on your setup. Refer to the Mantis SDK documentation for details.
+    *   You may need to set environment variables for Mantis SDK configuration, depending on your setup. To do this, you can edit the .env file for production, or create a `.env.development` file (in the same directory as `.env`), which won't be included in git pushes.
+    * To use a local frontend in the backend, create a `.env.development` file and assign `HOST=http://localhost:3000`, and `DOMAIN=localhost`.
 
 2.  **Run the Flask application:**
 

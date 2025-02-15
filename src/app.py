@@ -1,7 +1,12 @@
 import mantis_sdk.config as config
+import os
+from dotenv import load_dotenv
 
-config.HOST = "https://mantisdev.csail.mit.edu"
-config.DOMAIN = "mantisdev.csail.mit.edu"
+load_dotenv ()
+load_dotenv (".env.development", override=True)
+
+config.HOST = os.environ.get ("HOST")
+config.DOMAIN = os.environ.get ("DOMAIN")
 
 from mantis_sdk.client import MantisClient, SpacePrivacy, DataType, ReducerModels
 from mantis_sdk.space import Space
@@ -14,6 +19,9 @@ import pandas as pd
 import requests
 import uuid
 import traceback
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
 
