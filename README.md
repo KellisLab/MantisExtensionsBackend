@@ -46,6 +46,8 @@ This service provides an API endpoint for creating Mantis spaces from uploaded d
     *   You may need to set environment variables for Mantis SDK configuration, depending on your setup. To do this, you can edit the .env file for production, or create a `.env.development` file (in the same directory as `.env`), which won't be included in git pushes.
     * To use a local frontend in the backend, create a `.env.development` file and assign `HOST=http://localhost:3000`, and `DOMAIN=localhost`.
 
+    ***Note***: If you are using a local backend, you must run it with docker, or the space creation will NOT work. To do so, `cd docker` from the backend root, then `docker compose up -d --build`. After you run the build once, you can re-run it simply with `docker-compose up`. If things dno't work, check the logs and make sure they are not empty.
+
 2.  **Run the Flask application:**
 
     ```bash
