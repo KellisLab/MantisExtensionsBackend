@@ -8,7 +8,7 @@ This service provides an API endpoint for creating Mantis spaces from uploaded d
 
     ```bash
     git clone https://github.com/KellisLab/MantisExtensionsBackend.git
-    cd Integration
+    cd MantisExtensionsBackend
     ```
 
 2.  **Create a virtual environment (recommended):**
