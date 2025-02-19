@@ -22,9 +22,13 @@ import uuid
 import traceback
 import logging
 
+from get_proxy import get_proxy_bp
+
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
+
+app.register_blueprint(get_proxy_bp)
 
 @app.route('/create-space', methods=['POST'])
 @cross_origin()
