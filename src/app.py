@@ -61,4 +61,4 @@ def create_space():
         return jsonify({"error": str(e), "stacktrace": tb}), 400
     
 if __name__ == '__main__':
-    app.run(port=5111, debug=True)
+    app.run(port=8111, debug=True)
