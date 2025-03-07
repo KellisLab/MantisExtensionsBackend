@@ -1,6 +1,7 @@
 appdirs==1.4.4
 asttokens==3.0.0
 blinker==1.9.0
+cachelib==0.13.0
 cachetools==5.5.1
 certifi==2025.1.31
 charset-normalizer==3.4.1
@@ -12,7 +13,9 @@ debugpy==1.8.12
 decorator==5.1.1
 executing==2.2.0
 Flask==3.1.0
+Flask-Caching==2.3.1
 Flask-Cors==5.0.0
+Flask-Session==0.8.0
 fonttools==4.55.8
 google-auth==2.38.0
 google-auth-oauthlib==1.2.1
@@ -27,10 +30,11 @@ Jinja2==3.1.5
 jupyter_client==8.6.3
 jupyter_core==5.7.2
 kiwisolver==1.4.8
-mantis_sdk @ git+https://github.com/KellisLab/Mantis_SDK.git
+mantis_sdk @ git+https://github.com/KellisLab/Mantis_SDK.git@8b98e3ddde437150ee8f4bb8a7497803437d3a85
 MarkupSafe==3.0.2
 matplotlib==3.10.0
 matplotlib-inline==0.1.7
+msgspec==0.19.0
 nest-asyncio==1.6.0
 numpy==2.2.2
 oauthlib==3.2.2
