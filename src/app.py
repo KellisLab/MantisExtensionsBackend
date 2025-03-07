@@ -48,6 +48,9 @@ def create_space():
             job_space_id_cache = cache.get ("job_space_id")
             job_id = data.get ("job")
 
+            if job_id is None:
+                return
+
             if job_space_id_cache is None:
                 job_space_id_cache = {}
 
