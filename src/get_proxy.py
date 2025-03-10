@@ -11,7 +11,7 @@ def proxy_request(url):
     try:
         decoded_url = unquote(url)
         
-        response = requests.get(decoded_url, stream=True, headers=headers)
+        response = requests.get(decoded_url, stream=True)
         headers = dict(response.headers)
         headers.pop('Content-Encoding', None)
         headers.pop('Transfer-Encoding', None)
