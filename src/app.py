@@ -92,4 +92,4 @@ def get_space_id(job):
         return jsonify({"error": str(e), "stacktrace": tb}), 400
     
 if __name__ == '__main__':
-    app.run(port=8111, debug=True)
+    app.run(host="0.0.0.0", port=8111, debug=True)
