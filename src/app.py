@@ -11,7 +11,7 @@ config.DOMAIN = os.environ.get ("DOMAIN")
 from mantis_sdk.client import MantisClient, SpacePrivacy, ReducerModels
 
 from flask import Flask, request, jsonify
-from flask_cors import cross_origin
+from flask_cors import cross_origin, CORS
 from flask_caching import Cache
 import pandas as pd
 import traceback
@@ -23,8 +23,9 @@ from get_proxy import get_proxy_bp
 logging.basicConfig(level=logging.DEBUG)
 
 app = Flask(__name__)
-app.config['CACHE_TYPE'] = 'simple'  # In-memory caching
+CORS(app)
 
+app.config['CACHE_TYPE'] = 'simple'  # In-memory caching
 cache = Cache(app)
 
 app.register_blueprint(get_proxy_bp)
