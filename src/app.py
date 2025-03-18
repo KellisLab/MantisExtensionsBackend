@@ -38,7 +38,7 @@ def create_space():
         # Name of connection to create
         name = data.get('name', "Connection") or "Connection"
 
-        def on_recieve_id(space_id):
+        def on_recieve_id(space_id, layer_id):
             # Get job ID, exit if not found
             job_id = data.get("job")
             if job_id is None:
@@ -50,7 +50,7 @@ def create_space():
             if job_space_id_cache is None:
                 job_space_id_cache = {}
 
-            job_space_id_cache[job_id] = space_id
+            job_space_id_cache[job_id] = (space_id, layer_id)
 
             # reset the value
             cache.set("job_space_id", job_space_id_cache)
@@ -80,9 +80,9 @@ def get_space_id(job):
         if job_space_id_cache is None or job not in job_space_id_cache:
             return jsonify({"error": "No space found for this job"}), 404
         
-        space_id = job_space_id_cache[job]
+        space_id, layer_id = job_space_id_cache[job]
 
-        return jsonify({"space_id": space_id})
+        return jsonify({"space_id": space_id, "layer_id": layer_id})
     
     except Exception as e:
         tb = traceback.format_exc()
