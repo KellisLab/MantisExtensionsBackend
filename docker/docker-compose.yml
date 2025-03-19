@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  web:
+    build: 
+      dockerfile: docker/Server.Dockerfile
+      context: ..
+    ports:
+      - "8111:8111"
+    volumes:
+      - ../:/app
+    depends_on:
+      - redis
+    environment:
+      - FLASK_ENV=${FLASK_ENV:-development}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MANTIS_HOST=${MANTIS_HOST:-http://localhost:3000}
+      - MANTIS_DOMAIN=${MANTIS_DOMAIN:-localhost}
+    command: python -m src.app
+
+  celery_worker:
+    build: 
+      dockerfile: docker/Server.Dockerfile
+      context: ..
+    volumes:
+      - ../:/app
+    depends_on:
+      - redis
+      - web
+    environment:
+      - FLASK_ENV=${FLASK_ENV:-development}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - MANTIS_HOST=${MANTIS_HOST:-http://localhost:3000}
+      - MANTIS_DOMAIN=${MANTIS_DOMAIN:-localhost}
+    command: celery -A src.worker.celery worker --loglevel=info
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: always
+
+volumes:
+  redis_data:

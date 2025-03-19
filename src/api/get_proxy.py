@@ -1,12 +1,12 @@
 from flask import Blueprint, Response
-import requests
+from flask_cors import cross_origin
 from urllib.parse import unquote
-from flask_cors import CORS
+import requests
 
-get_proxy_bp = Blueprint('get_proxy', __name__)
-CORS(get_proxy_bp)
+get_proxy = Blueprint('get_proxy', __name__)
 
-@get_proxy_bp.route('/get_proxy/<path:url>', methods=['GET'])
+@get_proxy.route('/get_proxy/<path:url>', methods=['GET'])
+@cross_origin()
 def proxy_request(url):
     try:
         decoded_url = unquote(url)
