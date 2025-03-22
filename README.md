@@ -87,11 +87,11 @@ To use a local frontend in the backend, create a `.env.development` file and ass
 
 ### Key Environment Variables:
 
-*   `FLASK_ENV`:  Set to `development` or `production`.
 *   `CELERY_BROKER_URL`:  The URL for the Celery broker (e.g., Redis).
 *   `CELERY_RESULT_BACKEND`: The URL for the Celery result backend (e.g., Redis).
 *   `MANTIS_HOST`: The hostname or IP address of the Mantis service.
 *   `MANTIS_DOMAIN`: The domain of the Mantis service.
+*   `FLASK_DEBUG`: Whether to use the development or production config for flask, see `config.py`.
 
 ## Celery: Asynchronous Task Processing
 

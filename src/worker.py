@@ -2,9 +2,7 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv ()
-
-if os.environ.get ("FLASK_ENV") != "production":
-    load_dotenv (".env.development", override=True)
+load_dotenv (".env.development", override=True) # Load dev if it exists
 
 from src.app import create_app
 
