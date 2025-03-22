@@ -1,7 +1,6 @@
 import os
 
 class Config:
-    CACHE_TYPE = 'simple'
     DEBUG = False
     TESTING = False
     ENV = 'production'

@@ -1,9 +1,7 @@
-from flask_caching import Cache
 from flask_cors import CORS
 from celery import Celery
 import os
 
-cache = Cache()
 cors = CORS()
 celery = Celery()
 

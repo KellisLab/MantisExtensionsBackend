@@ -2,7 +2,11 @@ import traceback
 import uuid
 import pandas as pd
 from mantis_sdk.client import MantisClient, SpacePrivacy, ReducerModels
-from src.extensions import celery, cache
+from src.extensions import celery
+import redis
+
+# Create a redis connection
+redis_cache = redis.Redis(host='redis', port=6379, decode_responses=True)
 
 @celery.task
 def process_space_creation(data):
@@ -15,22 +19,15 @@ def process_space_creation(data):
         # Name of connection to create
         name = data.get('name', "Connection") or "Connection"
 
-        def on_recieve_id(space_id):
+        def on_recieve_id(space_id, layer_id):
             # Get job ID, exit if not found
             job_id = data.get("job")
             if job_id is None:
                 return
             
-            # Update the cache with the job ID -> space_id
-            job_space_id_cache = cache.get("job_space_id")
-
-            if job_space_id_cache is None:
-                job_space_id_cache = {}
-
-            job_space_id_cache[job_id] = space_id
-
-            # reset the value
-            cache.set("job_space_id", job_space_id_cache)
+            # Update the cache with the specific job as a unique dict and store the space_id and layer_id
+            redis_cache.hset(f"job_space_id:{job_id}", "space_id", space_id)
+            redis_cache.hset(f"job_space_id:{job_id}", "layer_id", layer_id)
 
         # Main SDK call to create space
         space_response = mantis.create_space(
