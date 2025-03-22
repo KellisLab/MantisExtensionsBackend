@@ -14,7 +14,6 @@ services:
     depends_on:
       - redis
     environment:
-      - FLASK_ENV=${FLASK_ENV:-development}
       - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
       - CELERY_RESULT_BACKEND=redis://${REDIS_HOST:-redis}:6379/0
       - MANTIS_HOST=${MANTIS_HOST}
@@ -31,7 +30,6 @@ services:
       - redis
       - web
     environment:
-      - FLASK_ENV=${FLASK_ENV:-development}
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MANTIS_HOST=${MANTIS_HOST}
