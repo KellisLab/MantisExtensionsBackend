@@ -9,7 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN rm -rf /var/lib/apt/lists/*
 
-COPY . .
+COPY ./src/requirements.txt ./src/requirements.txt
+
 RUN python -m pip install --no-cache-dir -r ./src/requirements.txt
 
+COPY . .
+
 EXPOSE 8111
+
+CMD ["python", "-m", "src.app"]
