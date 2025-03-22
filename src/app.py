@@ -32,4 +32,4 @@ if __name__ == "__main__":
 
     app, _ = create_app()
 
-    app.run(host="0.0.0.0", port=8111, debug=os.environ.get("") == "development")
+    app.run(host="0.0.0.0", port=8111, debug=app.config['DEBUG'])
