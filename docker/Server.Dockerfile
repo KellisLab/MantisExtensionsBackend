@@ -16,5 +16,3 @@ RUN python -m pip install --no-cache-dir -r ./src/requirements.txt
 COPY . .
 
 EXPOSE 8111
-
-CMD ["python", "-m", "src.app"]

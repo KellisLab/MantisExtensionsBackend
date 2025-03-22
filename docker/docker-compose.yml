@@ -19,6 +19,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://${REDIS_HOST:-redis}:6379/0
       - MANTIS_HOST=${MANTIS_HOST}
       - MANTIS_DOMAIN=${MANTIS_DOMAIN}
+    command: python -m src.app
 
   celery_worker:
     build: 
