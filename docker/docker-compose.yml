@@ -16,8 +16,6 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - MANTIS_HOST=${MANTIS_HOST}
-      - MANTIS_DOMAIN=${MANTIS_DOMAIN}
     command: python -m src.app
 
   celery_worker:
@@ -32,8 +30,6 @@ services:
     environment:
       - CELERY_BROKER_URL=redis://redis:6379/0
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
-      - MANTIS_HOST=${MANTIS_HOST}
-      - MANTIS_DOMAIN=${MANTIS_DOMAIN}
     command: celery -A src.worker.celery worker --loglevel=info
 
   redis:
