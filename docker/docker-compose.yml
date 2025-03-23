@@ -14,8 +14,8 @@ services:
     depends_on:
       - redis
     environment:
-      - CELERY_BROKER_URL=redis://${REDIS_HOST:-redis}:6379/0
-      - CELERY_RESULT_BACKEND=redis://${REDIS_HOST:-redis}:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - MANTIS_HOST=${MANTIS_HOST}
       - MANTIS_DOMAIN=${MANTIS_DOMAIN}
     command: python -m src.app
