@@ -1,5 +1,3 @@
-import argparse
-import os
 import logging
 from dotenv import load_dotenv
 from flask import Flask
