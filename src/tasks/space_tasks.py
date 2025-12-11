@@ -180,7 +180,7 @@ class ResilientMantisClient(MantisClient):
         finally:
             try:
                 buffer.close()
-            except Exception:
+            except (AttributeError, ValueError):
                 pass
 
     def _prepare_data_buffer(self, data: pd.DataFrame | str) -> tuple[io.BytesIO | io.BufferedReader, list, str]:
@@ -384,7 +384,7 @@ def process_space_creation(data):
             }
 
         if len(df) > 1000:
-            print(f"Dataset has {len(df)} rows. Sampling to 1000 rows to prevent timeouts.")
+            import logging; logging.info(f"Dataset has {len(df)} rows. Sampling to 1000 rows to prevent timeouts.")
             df = df.sample(n=1000, random_state=42).reset_index(drop=True)
         
         # Use Mantis SDK for centralized space creation
