@@ -136,11 +136,11 @@ class ResilientMantisClient(MantisClient):
             data_types_sanitized.append(data_input)
 
         if custom_models is None:
-            custom_models = [None for _ in range(len(data_types))]
+            custom_models = [None for _ in range(len(data_types_sanitized))]
 
         assert len(custom_models) == len(
-            data_types
-        ), "Custom models must be provided for each data type, or set to None"
+            data_types_sanitized
+        ), "Custom models must align with the sanitized data_types ordering"
 
         space_id = str(uuid.uuid4())
         file_key = f"{space_name}-{space_id}.{file_extension}"
@@ -223,7 +223,9 @@ class ResilientMantisClient(MantisClient):
                 break
 
             if progress_value == 0 and choseUMAPvariations:
-                break
+                raise RuntimeError(
+                    "Progress reset to 0 after UMAP selection; possible backend regression or unexpected reset."
+                )
 
             time.sleep(1)
 
