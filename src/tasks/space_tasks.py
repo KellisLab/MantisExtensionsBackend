@@ -303,9 +303,9 @@ def process_space_creation(data):
         space_name = name + " - " + str(uuid.uuid4())
         
         # Convert data_types dict to the format expected by SDK
-        data_types_dict = {}
-        for column, data_type in data_types.items():
-            data_types_dict[column] = data_type
+        # data_types_dict = {}
+        # for column, data_type in data_types.items():
+        #     data_types_dict[column] = data_type
         
         # Additional optimization: remove any completely empty columns
         df = df.dropna(axis=1, how='all')
