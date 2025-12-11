@@ -165,7 +165,13 @@ class ResilientMantisClient(MantisClient):
 
         files = {"file": (f"data.{file_extension}", buffer, f"text/{file_extension}")}
 
-        landscape_response = self._safe_request("POST", "/synthesis/landscape", data=form_data, files=files)
+        try:
+            landscape_response = self._safe_request("POST", "/synthesis/landscape", data=form_data, files=files)
+        finally:
+            try:
+                buffer.close()
+            except Exception:
+                pass
         if isinstance(landscape_response, dict) and landscape_response.get("error"):
             raise RuntimeError(landscape_response["error"])
 
@@ -248,10 +254,7 @@ def process_space_creation(data):
             "timeout": int(os.environ.get("MANTIS_TIMEOUT", 300000))  # 5 minutes timeout
         })
         
-        # Debug cookie information
         cookie = data.get('cookie', '')
-        print(f"Cookie length: {len(cookie)}")
-        print(f"Cookie preview: {cookie[:100]}...")
         
         if not cookie:
             return {
