@@ -124,7 +124,7 @@ class ResilientMantisClient(MantisClient):
                 return {"success": True, "message": "UMAP parameters selected successfully"}
 
             raise
-        except ValueError:
+        except json.JSONDecodeError:
             raise RuntimeError(
                 "Authentication failed. The cookie may be expired or invalid. Please log in again to Mantis."
             )
