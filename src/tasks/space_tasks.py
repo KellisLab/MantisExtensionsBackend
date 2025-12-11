@@ -332,7 +332,7 @@ def process_space_creation(data):
                 space_result = mantis.create_space(
                     space_name=space_name,
                     data=df,
-                    data_types=data_types_dict,
+                    data_types=data_types,
                     custom_models=custom_models,
                     reducer=ReducerModels.UMAP,
                     privacy_level=SpacePrivacy.PRIVATE,
