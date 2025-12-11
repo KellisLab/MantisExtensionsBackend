@@ -192,16 +192,16 @@ def process_space_creation(data):
         
         # If dataset is too large, sample it to prevent timeouts
         # Use very aggressive sampling to prevent timeouts
-        if len(df) > 1000:
-            print(f"Dataset has {len(df)} rows. Sampling to 1000 rows to prevent timeouts.")
-            df = df.sample(n=1000, random_state=42).reset_index(drop=True)
-        
         if len(df) > 2000:
             return {
-                "error": f"Dataset too large even after sampling. {len(df)} rows provided, but maximum 2,000 rows are recommended to prevent timeouts.",
+                "error": f"Dataset too large. {len(df)} rows provided, but maximum 2,000 rows are recommended to prevent timeouts.",
                 "error_type": "dataset_too_large", 
                 "row_count": len(df)
             }
+
+        if len(df) > 1000:
+            print(f"Dataset has {len(df)} rows. Sampling to 1000 rows to prevent timeouts.")
+            df = df.sample(n=1000, random_state=42).reset_index(drop=True)
         
         # Use Mantis SDK for centralized space creation
         space_name = name + " - " + str(uuid.uuid4())
