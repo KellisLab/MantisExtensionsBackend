@@ -17,9 +17,9 @@ def process_space_creation(data):
         from mantis_sdk.config import ConfigurationManager
         config = ConfigurationManager()
         config.update({
-            "host": "https://mantisdev.csail.mit.edu",
-            "backend_host": "https://mantisdev.csail.mit.edu",
-            "timeout": 300000  # 5 minutes timeout
+            "host": os.environ.get("MANTIS_HOST", "https://mantisdev.csail.mit.edu"),
+            "backend_host": os.environ.get("MANTIS_BACKEND_HOST", "https://mantisdev.csail.mit.edu"),
+            "timeout": int(os.environ.get("MANTIS_TIMEOUT", 300000))  # 5 minutes timeout
         })
         
         # Debug cookie information
