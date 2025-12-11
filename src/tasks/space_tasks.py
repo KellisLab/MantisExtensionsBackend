@@ -365,9 +365,6 @@ def process_space_creation(data):
 
         # Prepare custom models for each data type
         data_types = data.get('data_types', {})
-
-        # Tianxi, added specifc supported model types with parameter custom_models
-        custom_models = ["text-embedding-ada-002" for _ in data_types.keys()]
         
         # Check data size to prevent timeout issues
         if len(df) < 100:
@@ -411,6 +408,14 @@ def process_space_creation(data):
         
         # Log the final dataset size
         print(f"Final dataset size: {len(df)} rows, {len(df.columns)} columns")
+        embedding_model_default = os.environ.get("MANTIS_EMBEDDING_MODEL", "text-embedding-ada-002")
+        custom_models = []
+        for column in df.columns:
+            column_type = data_types.get(column)
+            if column_type in {DataType.Semantic, DataType.CustomModel}:
+                custom_models.append(embedding_model_default)
+            else:
+                custom_models.append(None)
         
         # Create space using SDK with timeout handling and retry mechanism
         max_retries = 2
