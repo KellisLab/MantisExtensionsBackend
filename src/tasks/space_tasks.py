@@ -1,10 +1,10 @@
 import io
 import json
 import os
+import re
 import time
 import traceback
 import uuid
-import re
 
 import pandas as pd
 import redis
@@ -34,13 +34,45 @@ class ResilientMantisClient(MantisClient):
         return "404" in lowered or "not found" in lowered or "synthesisprogress not found" in lowered
 
     def _extract_status_code(self, message: str) -> int | None:
-        match = re.search(r"\b(\d{3})\b", message)
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                return None
-        return None
+        """
+        Try to extract an HTTP status code from a structured error message.
+        Looks for patterns like 'status code 404', 'HTTP 404', or 'response 504'.
+        """
+        if not message:
+            return None
+
+        pattern = re.compile(
+            r"\b(?:status(?: code)?|http|response)[^\d]{0,6}([1-5]\d{2})\b",
+            re.IGNORECASE,
+        )
+        match = pattern.search(message)
+        if not match:
+            return None
+
+        try:
+            return int(match.group(1))
+        except (TypeError, ValueError):
+            return None
+
+    def _is_timeout_error(self, message: str) -> bool:
+        """
+        Detect timeout-like errors from the request layer.
+        """
+        if not message:
+            return False
+
+        # Look for explicit status codes like 504 or keywords bounded by word boundaries.
+        status_code = self._extract_status_code(message)
+        if status_code == 504:
+            return True
+
+        return bool(re.search(r"\btimeout\b", message, re.IGNORECASE))
+
+    def is_timeout_error(self, message: str) -> bool:
+        """
+        Expose timeout detection for callers that need to classify retryable errors.
+        """
+        return self._is_timeout_error(message)
 
     def _default_umap_parameters(self) -> dict:
         return {
@@ -111,6 +143,47 @@ class ResilientMantisClient(MantisClient):
         embedding_model: str | None = None,
         chat_model: str | None = None,
     ):
+        buffer = None
+        try:
+            buffer, columns, file_extension = self._prepare_data_buffer(data)
+            data_types_sanitized, custom_models = self._build_data_types(
+                columns, data_types, custom_models
+            )
+            form_data, files, space_id, layer_id = self._build_form_and_files(
+                space_name,
+                file_extension,
+                buffer,
+                data_types_sanitized,
+                custom_models,
+                reducer,
+                privacy_level,
+                ai_provider,
+                embedding_model,
+                chat_model,
+            )
+
+            landscape_response = self._safe_request("POST", "/synthesis/landscape", data=form_data, files=files)
+            if isinstance(landscape_response, dict) and landscape_response.get("error"):
+                raise RuntimeError(landscape_response["error"])
+
+            if isinstance(landscape_response, dict):
+                layer_id = landscape_response.get("layer_id", space_id)
+
+            if on_recieve_id is not None:
+                on_recieve_id(space_id, layer_id or space_id)
+
+            self._poll_progress(space_id, layer_id, choose_variation)
+            if layer_id is None:
+                layer_id = space_id
+
+            return {"space_id": space_id, "layer_id": layer_id}
+        finally:
+            try:
+                buffer.close()
+            except Exception:
+                pass
+
+    def _prepare_data_buffer(self, data: pd.DataFrame | str) -> tuple[io.BytesIO | io.BufferedReader, list, str]:
         file_extension = "csv"
 
         if isinstance(data, str):
@@ -133,122 +206,125 @@ class ResilientMantisClient(MantisClient):
         if buffer is None:
             raise ValueError("Data must be a pandas DataFrame or a file path.")
 
-        try:
-            data_types_array = []
-            data_types_sanitized = []
+        return buffer, columns, file_extension
 
-            for column in columns:
-                if column in data_types:
-                    data_types_array.append(data_types[column])
-                else:
-                    data_types_array.append(DataType.Delete)
+    def _build_data_types(
+        self,
+        columns: list,
+        data_types: dict[str, DataType],
+        custom_models: list[str | None] | None,
+    ) -> tuple[list[dict], list[str | None]]:
+        data_types_array = []
+        data_types_sanitized = []
 
-            for data_type in data_types_array:
-                data_input = {possible: possible == data_type for possible in DataType.All}
-                data_types_sanitized.append(data_input)
+        for column in columns:
+            if column in data_types:
+                data_types_array.append(data_types[column])
+            else:
+                data_types_array.append(DataType.Delete)
 
-            if custom_models is None:
-                custom_models = [None for _ in range(len(data_types_sanitized))]
+        for data_type in data_types_array:
+            data_input = {possible: possible == data_type for possible in DataType.All}
+            data_types_sanitized.append(data_input)
 
-            assert len(custom_models) == len(
-                data_types_sanitized
-            ), "Custom models must align with the sanitized data_types ordering"
+        if custom_models is None:
+            custom_models = [None for _ in range(len(data_types_sanitized))]
 
-            space_id = str(uuid.uuid4())
-            file_key = f"{space_name}-{space_id}.{file_extension}"
+        assert len(custom_models) == len(
+            data_types_sanitized
+        ), "Custom models must align with the sanitized data_types ordering"
 
-            resolved_embedding_model = embedding_model or os.environ.get(
-                "MANTIS_EMBEDDING_MODEL", "text-embedding-ada-002"
-            )
-            resolved_chat_model = chat_model or os.environ.get("MANTIS_CHAT_MODEL", "gpt-4o-mini")
+        return data_types_sanitized, custom_models
 
-            form_data = {
-                "space_id": space_id,
-                "space_name": space_name,
-                "is_public": str(privacy_level == SpacePrivacy.PUBLIC).lower(),
-                "red_model": reducer,
-                "custom_models": json.dumps(custom_models),
-                "data_types": json.dumps(data_types_sanitized),
-                "ai_provider": ai_provider,
-                "file_key": file_key,
-                "chat_model": resolved_chat_model,
-                "embedding_model": resolved_embedding_model,
-            }
+    def _build_form_and_files(
+        self,
+        space_name: str,
+        file_extension: str,
+        buffer,
+        data_types_sanitized: list[dict],
+        custom_models: list[str | None],
+        reducer: ReducerModels,
+        privacy_level: SpacePrivacy,
+        ai_provider: AIProvider,
+        embedding_model: str | None,
+        chat_model: str | None,
+    ) -> tuple[dict, dict, str, str | None]:
+        space_id = str(uuid.uuid4())
+        file_key = f"{space_name}-{space_id}.{file_extension}"
 
-            files = {"file": (f"data.{file_extension}", buffer, f"text/{file_extension}")}
+        resolved_embedding_model = embedding_model or os.environ.get(
+            "MANTIS_EMBEDDING_MODEL", "text-embedding-ada-002"
+        )
+        resolved_chat_model = chat_model or os.environ.get("MANTIS_CHAT_MODEL", "gpt-4o-mini")
 
-            landscape_response = self._safe_request("POST", "/synthesis/landscape", data=form_data, files=files)
-            if isinstance(landscape_response, dict) and landscape_response.get("error"):
-                raise RuntimeError(landscape_response["error"])
+        form_data = {
+            "space_id": space_id,
+            "space_name": space_name,
+            "is_public": str(privacy_level == SpacePrivacy.PUBLIC).lower(),
+            "red_model": reducer,
+            "custom_models": json.dumps(custom_models),
+            "data_types": json.dumps(data_types_sanitized),
+            "ai_provider": ai_provider,
+            "file_key": file_key,
+            "chat_model": resolved_chat_model,
+            "embedding_model": resolved_embedding_model,
+        }
 
-            layer_id = None
-            if isinstance(landscape_response, dict):
-                layer_id = landscape_response.get("layer_id", space_id)
+        files = {"file": (f"data.{file_extension}", buffer, f"text/{file_extension}")}
+        return form_data, files, space_id, None
 
-            if on_recieve_id is not None:
-                on_recieve_id(space_id, layer_id or space_id)
+    def _poll_progress(self, space_id: str, layer_id: str | None, choose_variation):
+        choseUMAPvariations = False
+        previous_progress = -1
 
-            choseUMAPvariations = False
-            previous_progress = -1
+        while True:
+            progress = self._safe_request("GET", f"synthesis/progress/{space_id}")
+            if not isinstance(progress, dict):
+                raise RuntimeError("Unexpected progress response format.")
 
-            while True:
-                progress = self._safe_request("GET", f"synthesis/progress/{space_id}")
-                if not isinstance(progress, dict):
-                    raise RuntimeError("Unexpected progress response format.")
+            if progress.get("error"):
+                raise SpaceCreationError(progress["error"])
 
-                if progress.get("error"):
-                    raise SpaceCreationError(progress["error"])
+            progress_value = progress.get("progress", 0)
 
-                progress_value = progress.get("progress", 0)
+            if progress_value != previous_progress:
+                previous_progress = progress_value
 
-                if progress_value != previous_progress:
-                    previous_progress = progress_value
+            if progress_value >= 50 and not choseUMAPvariations:
+                parameters = None
 
-                if progress_value >= 50 and not choseUMAPvariations:
-                    parameters = None
-
-                    umap_variations = self._safe_request("GET", f"synthesis/parameters/{space_id}")
-                    if isinstance(umap_variations, dict):
-                        parameters = (
-                            umap_variations.get("umap_variations", {}).get("parameters")
-                            if umap_variations.get("umap_variations")
-                            else None
-                        )
-
-                    if parameters:
-                        if choose_variation is None:
-                            chosen_parameter = super()._default_parameter_selection(parameters)
-                        else:
-                            chosen_parameter = choose_variation(parameters)
-
-                        self._safe_request(
-                            "POST",
-                            f"synthesis/landscape/{space_id}/select-umap/{chosen_parameter}",
-                            rm_slash=True,
-                            json={"selected_variation": chosen_parameter, "layer_id": layer_id, "floor_number": 1},
-                        )
-
-                        choseUMAPvariations = True
-
-                if progress_value >= 100:
-                    break
-
-                if progress_value == 0 and choseUMAPvariations:
-                    raise RuntimeError(
-                        "Progress reset to 0 after UMAP selection; possible backend regression or unexpected reset."
+                umap_variations = self._safe_request("GET", f"synthesis/parameters/{space_id}")
+                if isinstance(umap_variations, dict):
+                    parameters = (
+                        umap_variations.get("umap_variations", {}).get("parameters")
+                        if umap_variations.get("umap_variations")
+                        else None
                     )
 
-                time.sleep(1)
+                if parameters:
+                    if choose_variation is None:
+                        chosen_parameter = super()._default_parameter_selection(parameters)
+                    else:
+                        chosen_parameter = choose_variation(parameters)
 
-            if layer_id is None:
-                layer_id = space_id
+                    self._safe_request(
+                        "POST",
+                        f"synthesis/landscape/{space_id}/select-umap/{chosen_parameter}",
+                        rm_slash=True,
+                        json={"selected_variation": chosen_parameter, "layer_id": layer_id, "floor_number": 1},
+                    )
 
-            return {"space_id": space_id, "layer_id": layer_id}
-        finally:
-            try:
-                buffer.close()
-            except Exception:
-                pass
+                    choseUMAPvariations = True
+
+            if progress_value >= 100:
+                break
+
+            if progress_value == 0 and choseUMAPvariations:
+                raise RuntimeError(
+                    "Progress reset to 0 after UMAP selection; possible backend regression or unexpected reset."
+                )
+
+            time.sleep(1)
 
 @celery.task
 def process_space_creation(data):
@@ -354,7 +430,7 @@ def process_space_creation(data):
                 )
                 break  # Success, exit retry loop
             except RuntimeError as e:
-                if "504" in str(e) or "Gateway Time-out" in str(e) or "timeout" in str(e).lower():
+                if mantis.is_timeout_error(str(e)):
                     retry_count += 1
                     if retry_count <= max_retries:
                         print(f"Timeout error occurred, retrying... (attempt {retry_count}/{max_retries})")
