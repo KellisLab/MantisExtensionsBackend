@@ -4,6 +4,7 @@ import os
 import time
 import traceback
 import uuid
+import re
 
 import pandas as pd
 import redis
@@ -32,6 +33,15 @@ class ResilientMantisClient(MantisClient):
         lowered = message.lower()
         return "404" in lowered or "not found" in lowered or "synthesisprogress not found" in lowered
 
+    def _extract_status_code(self, message: str) -> int | None:
+        match = re.search(r"\b(\d{3})\b", message)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+        return None
+
     def _default_umap_parameters(self) -> dict:
         return {
             "umap_variations": {
@@ -50,13 +60,14 @@ class ResilientMantisClient(MantisClient):
             return super()._request(method, endpoint, **kwargs)
         except RuntimeError as e:
             message = str(e)
+            status_code = self._extract_status_code(message)
             normalized_endpoint = (endpoint or "").lstrip("/")
             method_upper = method.upper()
 
             if (
                 method_upper == "GET"
                 and normalized_endpoint.startswith("synthesis/progress/")
-                and self._is_not_found(message)
+                and (status_code == 404 or self._is_not_found(message))
             ):
                 return {
                     "progress": 100,
@@ -68,7 +79,7 @@ class ResilientMantisClient(MantisClient):
             if (
                 method_upper == "GET"
                 and normalized_endpoint.startswith("synthesis/parameters/")
-                and self._is_not_found(message)
+                and (status_code == 404 or self._is_not_found(message))
             ):
                 return self._default_umap_parameters()
 
@@ -76,7 +87,7 @@ class ResilientMantisClient(MantisClient):
                 method_upper == "POST"
                 and normalized_endpoint.startswith("synthesis/landscape/")
                 and "/select-umap/" in normalized_endpoint
-                and self._is_not_found(message)
+                and (status_code == 404 or self._is_not_found(message))
             ):
                 return {"success": True, "message": "UMAP parameters selected successfully"}
 
@@ -210,11 +221,10 @@ class ResilientMantisClient(MantisClient):
                     )
 
                 if parameters:
-                    chosen_parameter = (
-                        self._default_parameter_selection(parameters)
-                        if choose_variation is None
-                        else choose_variation(parameters)
-                    )
+                    if choose_variation is None:
+                        chosen_parameter = super()._default_parameter_selection(parameters)
+                    else:
+                        chosen_parameter = choose_variation(parameters)
 
                     self._safe_request(
                         "POST",
