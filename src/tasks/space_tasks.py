@@ -366,10 +366,10 @@ def process_space_creation(data):
         layer_id = space_result.get("layer_id", space_id)
         
         # Return a simplified response
+        # Return a simplified response
         space_response = {
             "space_id": space_id,
-            "layer_id": layer_id,
-            "result": space_result
+            "layer_id": layer_id
         }
             
         return space_response
