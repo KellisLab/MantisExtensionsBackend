@@ -1,12 +1,236 @@
+import io
+import json
+import os
+import time
 import traceback
 import uuid
+
 import pandas as pd
-from mantis_sdk.client import MantisClient, SpacePrivacy, ReducerModels, DataType, AIProvider
-from src.extensions import celery
 import redis
+from mantis_sdk.client import (
+    AIProvider,
+    DataType,
+    MantisClient,
+    ReducerModels,
+    SpaceCreationError,
+    SpacePrivacy,
+)
+
+from src.extensions import celery
 
 # Create a redis connection
 redis_cache = redis.Redis(host='redis', port=6379, decode_responses=True)
+
+
+class ResilientMantisClient(MantisClient):
+    """
+    Wrapper around MantisClient that keeps the SDK untouched while
+    providing guarded requests and sensible fallbacks for space creation.
+    """
+
+    def _is_not_found(self, message: str) -> bool:
+        lowered = message.lower()
+        return "404" in lowered or "not found" in lowered or "synthesisprogress not found" in lowered
+
+    def _default_umap_parameters(self) -> dict:
+        return {
+            "umap_variations": {
+                "parameters": {
+                    "default": {
+                        "n_neighbors": 15,
+                        "min_dist": 0.1,
+                        "metric": "euclidean",
+                    }
+                }
+            }
+        }
+
+    def _safe_request(self, method: str, endpoint: str, **kwargs):
+        try:
+            return super()._request(method, endpoint, **kwargs)
+        except RuntimeError as e:
+            message = str(e)
+            normalized_endpoint = (endpoint or "").lstrip("/")
+            method_upper = method.upper()
+
+            if (
+                method_upper == "GET"
+                and normalized_endpoint.startswith("synthesis/progress/")
+                and self._is_not_found(message)
+            ):
+                return {
+                    "progress": 100,
+                    "error": False,
+                    "status": "completed",
+                    "message": "Space creation completed (progress not tracked)",
+                }
+
+            if (
+                method_upper == "GET"
+                and normalized_endpoint.startswith("synthesis/parameters/")
+                and self._is_not_found(message)
+            ):
+                return self._default_umap_parameters()
+
+            if (
+                method_upper == "POST"
+                and normalized_endpoint.startswith("synthesis/landscape/")
+                and "/select-umap/" in normalized_endpoint
+                and self._is_not_found(message)
+            ):
+                return {"success": True, "message": "UMAP parameters selected successfully"}
+
+            raise
+        except ValueError:
+            raise RuntimeError(
+                "Authentication failed. The cookie may be expired or invalid. Please log in again to Mantis."
+            )
+
+    def create_space(
+        self,
+        space_name: str,
+        data: pd.DataFrame | str,
+        data_types: dict[str, DataType],
+        custom_models: list[str | None] | None = None,
+        reducer: ReducerModels = ReducerModels.UMAP,
+        privacy_level: SpacePrivacy = SpacePrivacy.PRIVATE,
+        ai_provider: AIProvider = AIProvider.OpenAI,
+        choose_variation=None,
+        on_recieve_id=None,
+        embedding_model: str | None = None,
+        chat_model: str | None = None,
+    ):
+        file_extension = "csv"
+
+        if isinstance(data, str):
+            file_extension = data.split(".")[-1]
+
+        buffer = None
+        columns = None
+
+        if isinstance(data, pd.DataFrame):
+            columns = data.columns
+
+            buffer = io.BytesIO()
+            data.to_csv(buffer, index=False)
+            buffer.seek(0)
+
+        elif isinstance(data, str):
+            columns = pd.read_csv(data, nrows=1).columns
+            buffer = open(data, "rb")
+
+        if buffer is None:
+            raise ValueError("Data must be a pandas DataFrame or a file path.")
+
+        data_types_array = []
+        data_types_sanitized = []
+
+        for column in columns:
+            if column in data_types:
+                data_types_array.append(data_types[column])
+            else:
+                data_types_array.append(DataType.Delete)
+
+        for data_type in data_types_array:
+            data_input = {possible: possible == data_type for possible in DataType.All}
+            data_types_sanitized.append(data_input)
+
+        if custom_models is None:
+            custom_models = [None for _ in range(len(data_types))]
+
+        assert len(custom_models) == len(
+            data_types
+        ), "Custom models must be provided for each data type, or set to None"
+
+        space_id = str(uuid.uuid4())
+        file_key = f"{space_name}-{space_id}.{file_extension}"
+
+        resolved_embedding_model = embedding_model or os.environ.get(
+            "MANTIS_EMBEDDING_MODEL", "text-embedding-ada-002"
+        )
+        resolved_chat_model = chat_model or os.environ.get("MANTIS_CHAT_MODEL", "gpt-4o-mini")
+
+        form_data = {
+            "space_id": space_id,
+            "space_name": space_name,
+            "is_public": str(privacy_level == SpacePrivacy.PUBLIC).lower(),
+            "red_model": reducer,
+            "custom_models": json.dumps(custom_models),
+            "data_types": json.dumps(data_types_sanitized),
+            "ai_provider": ai_provider,
+            "file_key": file_key,
+            "chat_model": resolved_chat_model,
+            "embedding_model": resolved_embedding_model,
+        }
+
+        files = {"file": (f"data.{file_extension}", buffer, f"text/{file_extension}")}
+
+        landscape_response = self._safe_request("POST", "/synthesis/landscape", data=form_data, files=files)
+        if isinstance(landscape_response, dict) and landscape_response.get("error"):
+            raise RuntimeError(landscape_response["error"])
+
+        layer_id = None
+        if isinstance(landscape_response, dict):
+            layer_id = landscape_response.get("layer_id", space_id)
+
+        if on_recieve_id is not None:
+            on_recieve_id(space_id, layer_id or space_id)
+
+        choseUMAPvariations = False
+        previous_progress = -1
+
+        while True:
+            progress = self._safe_request("GET", f"synthesis/progress/{space_id}")
+            if not isinstance(progress, dict):
+                raise RuntimeError("Unexpected progress response format.")
+
+            if progress.get("error"):
+                raise SpaceCreationError(progress["error"])
+
+            progress_value = progress.get("progress", 0)
+
+            if progress_value != previous_progress:
+                previous_progress = progress_value
+
+            if progress_value >= 50 and not choseUMAPvariations:
+                parameters = None
+
+                umap_variations = self._safe_request("GET", f"synthesis/parameters/{space_id}")
+                if isinstance(umap_variations, dict):
+                    parameters = (
+                        umap_variations.get("umap_variations", {}).get("parameters")
+                        if umap_variations.get("umap_variations")
+                        else None
+                    )
+
+                if parameters:
+                    chosen_parameter = (
+                        self._default_parameter_selection(parameters)
+                        if choose_variation is None
+                        else choose_variation(parameters)
+                    )
+
+                    self._safe_request(
+                        "POST",
+                        f"synthesis/landscape/{space_id}/select-umap/{chosen_parameter}",
+                        rm_slash=True,
+                        json={"selected_variation": chosen_parameter, "layer_id": layer_id, "floor_number": 1},
+                    )
+
+                    choseUMAPvariations = True
+
+            if progress_value >= 100:
+                break
+
+            if progress_value == 0 and choseUMAPvariations:
+                break
+
+            time.sleep(1)
+
+        if layer_id is None:
+            layer_id = space_id
+
+        return {"space_id": space_id, "layer_id": layer_id}
 
 @celery.task
 def process_space_creation(data):
@@ -33,135 +257,7 @@ def process_space_creation(data):
                 "error_type": "authentication_missing"
             }
         
-        mantis = MantisClient("/api/proxy/", cookie, config)
-        
-        # Monkey patch the _request method to add required model parameters and handle progress tracking
-        original_request = mantis._request
-        def patched_request(method, endpoint, **kwargs):
-            print(f"Patched request: {method} {endpoint}")
-            if endpoint == "/synthesis/landscape" and method == "POST":
-                if 'data' in kwargs:
-                    kwargs['data']['embedding_model'] = 'text-embedding-ada-002'
-                    kwargs['data']['chat_model'] = 'gpt-4o-mini'
-            elif (endpoint.startswith("/synthesis/progress/") or endpoint.startswith("synthesis/progress/")) and method == "GET":
-                # Handle progress tracking - return a mock progress response
-                # This prevents 404 errors when checking progress
-                print(f"Mocking progress response for {endpoint}")
-                return {
-                    "progress": 100,
-                    "error": False,
-                    "status": "completed",
-                    "message": "Space creation completed"
-                }
-            elif (endpoint.startswith("/synthesis/parameters/") or endpoint.startswith("synthesis/parameters/")) and method == "GET":
-                # Handle UMAP parameters - return a mock response to skip parameter selection
-                print(f"Mocking parameters response for {endpoint}")
-                return {
-                    "umap_variations": {
-                        "parameters": {
-                            "default": {
-                                "n_neighbors": 15,
-                                "min_dist": 0.1,
-                                "metric": "euclidean"
-                            }
-                        }
-                    }
-                }
-            elif (endpoint.startswith("/synthesis/landscape/") or endpoint.startswith("synthesis/landscape/")) and "/select-umap/" in endpoint and method == "POST":
-                # Handle UMAP selection - return a mock response to skip selection
-                print(f"Mocking UMAP selection response for {endpoint}")
-                return {
-                    "success": True,
-                    "message": "UMAP parameters selected successfully"
-                }
-            try:
-                print(f"Making actual request to {endpoint}")
-                # Debug URL construction
-                if endpoint == "/synthesis/landscape":
-                    print(f"URL construction debug:")
-                    print(f"  config.host: {mantis.config.host}")
-                    print(f"  base_url: {mantis.base_url}")
-                    print(f"  endpoint: {endpoint}")
-                return original_request(method, endpoint, **kwargs)
-            except RuntimeError as e:
-                # Handle authentication errors (HTML response instead of JSON)
-                if "Expecting value" in str(e) and "JSONDecodeError" in str(e):
-                    return {
-                        "error": "Authentication failed. The cookie may be expired or invalid. Please log in again to Mantis.",
-                        "error_type": "authentication_failed",
-                        "details": "Received HTML sign-in page instead of JSON response"
-                    }
-                # Handle timeout errors specifically
-                if "504" in str(e) or "Gateway Time-out" in str(e) or "timeout" in str(e).lower():
-                    raise RuntimeError("Request timed out. The dataset may be too large or the server is under heavy load. Please try again later or with a smaller dataset.")
-                # If it's a 404 on progress endpoint, return mock progress
-                elif (endpoint.startswith("/synthesis/progress/") or endpoint.startswith("synthesis/progress/")) and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "progress": 100,
-                        "error": False,
-                        "status": "completed",
-                        "message": "Space creation completed (progress not tracked)"
-                    }
-                # If it's a 404 on parameters endpoint, return mock parameters
-                elif (endpoint.startswith("/synthesis/parameters/") or endpoint.startswith("synthesis/parameters/")) and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "umap_variations": {
-                            "parameters": {
-                                "default": {
-                                    "n_neighbors": 15,
-                                    "min_dist": 0.1,
-                                    "metric": "euclidean"
-                                }
-                            }
-                        }
-                    }
-                # If it's a 404 on UMAP selection endpoint, return mock success
-                elif (endpoint.startswith("/synthesis/landscape/") or endpoint.startswith("synthesis/landscape/")) and "/select-umap/" in endpoint and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "success": True,
-                        "message": "UMAP parameters selected successfully"
-                    }
-                raise e
-            except Exception as e:
-                # Handle authentication errors (HTML response instead of JSON)
-                if "Expecting value" in str(e) and "JSONDecodeError" in str(e):
-                    return {
-                        "error": "Authentication failed. The cookie may be expired or invalid. Please log in again to Mantis.",
-                        "error_type": "authentication_failed",
-                        "details": "Received HTML sign-in page instead of JSON response"
-                    }
-                # Handle timeout errors specifically
-                if "504" in str(e) or "Gateway Time-out" in str(e) or "timeout" in str(e).lower():
-                    raise RuntimeError("Request timed out. The dataset may be too large or the server is under heavy load. Please try again later or with a smaller dataset.")
-                # If it's a 404 on progress endpoint, return mock progress
-                elif (endpoint.startswith("/synthesis/progress/") or endpoint.startswith("synthesis/progress/")) and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "progress": 100,
-                        "error": False,
-                        "status": "completed",
-                        "message": "Space creation completed (progress not tracked)"
-                    }
-                # If it's a 404 on parameters endpoint, return mock parameters
-                elif (endpoint.startswith("/synthesis/parameters/") or endpoint.startswith("synthesis/parameters/")) and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "umap_variations": {
-                            "parameters": {
-                                "default": {
-                                    "n_neighbors": 15,
-                                    "min_dist": 0.1,
-                                    "metric": "euclidean"
-                                }
-                            }
-                        }
-                    }
-                # If it's a 404 on UMAP selection endpoint, return mock success
-                elif (endpoint.startswith("/synthesis/landscape/") or endpoint.startswith("synthesis/landscape/")) and "/select-umap/" in endpoint and ("404" in str(e) or "Not Found" in str(e) or "SynthesisProgress not found" in str(e)):
-                    return {
-                        "success": True,
-                        "message": "UMAP parameters selected successfully"
-                    }
-                raise e
-        mantis._request = patched_request
+        mantis = ResilientMantisClient("/api/proxy/", cookie, config)
 
         # Name of connection to create
         name = data.get('name', "Connection") or "Connection"
