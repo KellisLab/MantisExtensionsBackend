@@ -180,7 +180,7 @@ class ResilientMantisClient(MantisClient):
         finally:
             try:
                 buffer.close()
-            except Exception:
+            except (AttributeError, ValueError):
                 pass
 
     def _prepare_data_buffer(self, data: pd.DataFrame | str) -> tuple[io.BytesIO | io.BufferedReader, list, str]:
