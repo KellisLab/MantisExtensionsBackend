@@ -187,7 +187,7 @@ class ResilientMantisClient(MantisClient):
         file_extension = "csv"
 
         if isinstance(data, str):
-            file_extension = data.split(".")[-1]
+            file_extension = os.path.splitext(data)[1].lstrip('.')
 
         buffer = None
         columns = None
