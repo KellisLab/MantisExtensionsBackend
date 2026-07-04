@@ -27,4 +27,5 @@ def proxy_request(url):
         )
     
     except Exception as e:
-        return {'error': str(e)}, 40
+        # proxy could not reach or relay the upstream -> 502 Bad Gateway
+        return {'error': str(e)}, 502
