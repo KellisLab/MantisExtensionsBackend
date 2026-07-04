@@ -1,7 +1,10 @@
+import logging
 from flask import Blueprint, Response
 from flask_cors import cross_origin
 from urllib.parse import unquote
 import requests
+
+logger = logging.getLogger(__name__)
 
 get_proxy = Blueprint('get_proxy', __name__)
 
@@ -26,6 +29,8 @@ def proxy_request(url):
             headers=headers
         )
     
-    except Exception as e:
-        # proxy could not reach or relay the upstream -> 502 Bad Gateway
-        return {'error': str(e)}, 502
+    except Exception:
+        # log the detail server-side; return a generic message so we don't leak
+        # internal details (paths, hostnames) to the client (CWE-209).
+        logger.exception("get_proxy failed to fetch upstream url")
+        return {'error': 'Bad Gateway: the proxy could not reach or relay the upstream server.'}, 502
